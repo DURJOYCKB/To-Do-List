@@ -249,7 +249,7 @@ export default function App() {
 
         <button
           onClick={addTask}
-          className="w-full bg-blue-400 text-white py-2 rounded-xl mb-3"
+          className="w-full bg-blue-400 hover:bg-blue-600 text-white py-2 rounded-xl mb-3"
         >
           Add
         </button>
