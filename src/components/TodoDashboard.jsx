@@ -201,7 +201,7 @@ export default function App() {
 
             {task.reminder && (
               <p className="text-xs text-blue-600">
-                🔔 Reminder at {task.reminder}
+                🔔 Task Time {task.reminder}
               </p>
             )}
           </div>
