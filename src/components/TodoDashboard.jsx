@@ -40,31 +40,45 @@ export default function App() {
   }, []);
 
   // 🔔 Reminder notification (AM/PM)
-  const scheduleReminder = (task) => {
-    if (!("Notification" in window)) return;
+   const scheduleReminder = (task) => {
+    const triggerReminder = () => {
+      // 📱 Mobile fallback
+      if (!("Notification" in window)) {
+        alert(`⏰ Reminder: ${task.text}`);
 
-    Notification.requestPermission().then(permission => {
-      if (permission !== "granted") return;
+        if ("vibrate" in navigator) {
+          navigator.vibrate([200, 100, 200]);
+        }
+        return;
+      }
 
-      const [time, period] = task.reminder.split(" ");
-      let [hours, minutes] = time.split(":").map(Number);
+      // 💻 Desktop notification
+      new Notification("⏰ Task Reminder", {
+        body: task.text,
+      });
+    };
 
-      if (period === "PM" && hours !== 12) hours += 12;
-      if (period === "AM" && hours === 12) hours = 0;
+    // ⏰ Convert AM/PM → 24h
+    const [time, period] = task.reminder.split(" ");
+    let [hours, minutes] = time.split(":").map(Number);
 
-      const reminderTime = new Date();
-      reminderTime.setHours(hours, minutes, 0, 0);
+    if (period === "PM" && hours !== 12) hours += 12;
+    if (period === "AM" && hours === 12) hours = 0;
 
-      const delay = reminderTime - new Date();
-      if (delay <= 0) return;
+    const reminderTime = new Date();
+    reminderTime.setHours(hours, minutes, 0, 0);
 
-      setTimeout(() => {
-        new Notification("⏰ Task Reminder", {
-          body: task.text,
-        });
-      }, delay);
-    });
+    const delay = reminderTime - new Date();
+    if (delay <= 0) return;
+
+    // 🔔 Ask permission only if supported
+    if ("Notification" in window && Notification.permission !== "granted") {
+      Notification.requestPermission();
+    }
+
+    setTimeout(triggerReminder, delay);
   };
+
 
   // ➕ Add task
   const addTask = () => {
@@ -339,7 +353,15 @@ export default function App() {
             <ul className="space-y-2">{renderTasks(visibleTomorrow)}</ul>
           </>
         )}
+        <footer className="border-t border-gray-200 dark:border-gray-700 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
+      ©     {new Date().getFullYear()} Durjoy Chakraborty. All rights reserved.
+        </footer>
       </div>
+      
+    
+
     </div>
+    
+
   );
 }
