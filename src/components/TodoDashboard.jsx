@@ -3,27 +3,28 @@ import { useEffect, useState } from "react";
 export default function App() {
   const [tasks, setTasks] = useState(() => {
     const saved = localStorage.getItem("tasks");
-    if (!saved) return [];
-
-    return JSON.parse(saved).map(task => ({
-      id: task.id ?? Date.now() + Math.random(),
-      ...task,
-    }));
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [input, setInput] = useState("");
+
+  // 🔔 Manual reminder (default AM)
+  const [reminderHour, setReminderHour] = useState("");
+  const [reminderMinute, setReminderMinute] = useState("");
+  const [reminderPeriod, setReminderPeriod] = useState("AM");
+
   const [darkMode, setDarkMode] = useState(false);
   const [editId, setEditId] = useState(null);
   const [editText, setEditText] = useState("");
   const [day, setDay] = useState("Today");
   const [filter, setFilter] = useState("All");
 
-  // 💾 Save tasks
+  // 💾 Save to localStorage
   useEffect(() => {
     localStorage.setItem("tasks", JSON.stringify(tasks));
   }, [tasks]);
 
-  // 🕛 Auto move Tomorrow → Today (once per day)
+  // 🕛 Move Tomorrow → Today (once per day)
   useEffect(() => {
     const today = new Date().toDateString();
     const lastDate = localStorage.getItem("lastDate");
@@ -31,29 +32,39 @@ export default function App() {
     if (lastDate !== today) {
       setTasks(prev =>
         prev.map(task =>
-          task.day === "Tomorrow"
-            ? { ...task, day: "Today" }
-            : task
+          task.day === "Tomorrow" ? { ...task, day: "Today" } : task
         )
       );
-    
       localStorage.setItem("lastDate", today);
     }
-
   }, []);
 
-  // 📊 Progress
-  const completedCount = tasks.filter(t => t.completed).length;
-  const totalCount = tasks.length;
-  const progress =
-    totalCount === 0 ? 0 : Math.round((completedCount / totalCount) * 100);
+  // 🔔 Reminder notification (AM/PM)
+  const scheduleReminder = (task) => {
+    if (!("Notification" in window)) return;
 
-  const progressColor =
-    progress < 40
-      ? "bg-red-500"
-      : progress < 80
-      ? "bg-yellow-400"
-      : "bg-green-500";
+    Notification.requestPermission().then(permission => {
+      if (permission !== "granted") return;
+
+      const [time, period] = task.reminder.split(" ");
+      let [hours, minutes] = time.split(":").map(Number);
+
+      if (period === "PM" && hours !== 12) hours += 12;
+      if (period === "AM" && hours === 12) hours = 0;
+
+      const reminderTime = new Date();
+      reminderTime.setHours(hours, minutes, 0, 0);
+
+      const delay = reminderTime - new Date();
+      if (delay <= 0) return;
+
+      setTimeout(() => {
+        new Notification("⏰ Task Reminder", {
+          body: task.text,
+        });
+      }, delay);
+    });
+  };
 
   // ➕ Add task
   const addTask = () => {
@@ -62,35 +73,41 @@ export default function App() {
     const time = new Date().toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
+      hour12: true,
     });
 
-    setTasks([
-      ...tasks,
-      {
-        id: Date.now(), // ✅ unique id
-        text: input,
-        completed: false,
-        time,
-        day,
-      },
-    ]);
+    let reminder = "";
+    if (reminderHour && reminderMinute !== "") {
+      const hh = reminderHour.padStart(2, "0");
+      const mm = reminderMinute.padStart(2, "0");
+      reminder = `${hh}:${mm} ${reminderPeriod}`;
+    }
+
+    const newTask = {
+      id: Date.now(),
+      text: input,
+      completed: false,
+      time,
+      reminder,
+      day,
+    };
+
+    setTasks([...tasks, newTask]);
+    if (reminder) scheduleReminder(newTask);
+
     setInput("");
+    setReminderHour("");
+    setReminderMinute("");
+    setReminderPeriod("AM");
   };
 
   // ✔ Toggle
   const toggleTask = (id) => {
     setTasks(tasks =>
       tasks.map(task =>
-        task.id === id
-          ? { ...task, completed: !task.completed }
-          : task
+        task.id === id ? { ...task, completed: !task.completed } : task
       )
     );
-
-    if (editId === id) {
-      setEditId(null);
-      setEditText("");
-    }
   };
 
   // 🗑 Delete
@@ -115,13 +132,23 @@ export default function App() {
         task.id === id ? { ...task, text: editText } : task
       )
     );
-
     setEditId(null);
     setEditText("");
   };
 
+  // 📊 Progress
+  const completedCount = tasks.filter(t => t.completed).length;
+  const totalCount = tasks.length;
+  const progress =
+    totalCount === 0 ? 0 : Math.round((completedCount / totalCount) * 100);
+
+  const progressColor =
+    progress < 40 ? "bg-red-500"
+    : progress < 80 ? "bg-yellow-400"
+    : "bg-green-500";
+
   // 🔍 Filter
- const todayTasks = tasks.filter(t => t.day === "Today");
+  const todayTasks = tasks.filter(t => t.day === "Today");
   const tomorrowTasks = tasks.filter(t => t.day === "Tomorrow");
 
   const visibleToday =
@@ -130,16 +157,16 @@ export default function App() {
   const visibleTomorrow =
     filter === "All" || filter === "Tomorrow" ? tomorrowTasks : [];
 
-  // 📋 Render list
+  // 📋 Render tasks
   const renderTasks = (list) =>
     list.map(task => (
       <li
         key={task.id}
-        className={`${
+        className={`px-4 py-3 rounded-xl ${
           darkMode ? "bg-orange-200" : "bg-green-200"
-        } px-4 py-3 rounded-xl`}
+        }`}
       >
-        <div className="flex justify-between items-start gap-2">
+        <div className="flex justify-between gap-2">
           <div className="flex-1">
             {editId === task.id ? (
               <input
@@ -151,13 +178,18 @@ export default function App() {
               />
             ) : (
               <p className={`flex items-center gap-2 ${task.completed ? "opacity-70" : ""}`}>
-                {task.completed && (
-                  <span className="text-green-600 font-bold">✔</span>
-                )}
+                {task.completed && <span className="text-green-600 font-bold">✔</span>}
                 {task.text}
               </p>
             )}
+
             <p className="text-xs text-slate-600 mt-1">⏰ {task.time}</p>
+
+            {task.reminder && (
+              <p className="text-xs text-blue-600">
+                🔔 Reminder at {task.reminder}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1">
@@ -198,19 +230,17 @@ export default function App() {
 
   return (
     <div className={`${darkMode ? "bg-[#0a192f]" : "bg-blue-100"} min-h-screen flex justify-center items-center p-4`}>
-      <div className={`${
-        darkMode ? "bg-green-100 text-black" : "bg-orange-100 text-slate-800"
-      } w-full max-w-md rounded-2xl shadow-xl p-6`}>
+      <div className={`${darkMode ? "bg-green-100" : "bg-orange-100"} w-full max-w-md rounded-2xl shadow-xl p-6`}>
+
         {/* Header */}
         <div className="flex justify-between mb-4">
           <h1 className="text-2xl font-bold">📝 To Do ..</h1>
-          <button onClick={() => setDarkMode(!darkMode)}
-            className="p-2 rounded-full hover:bg-blue-900">
+          <button onClick={() => setDarkMode(!darkMode)}>
             {darkMode ? "☀️" : "🌙"}
           </button>
         </div>
 
-        {/* Input */}
+        {/* Task input */}
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -218,7 +248,37 @@ export default function App() {
           className="w-full mb-2 px-4 py-2 rounded-xl border"
         />
 
-        {/* Today / Tomorrow */}
+        {/* Manual reminder */}
+        <div className="flex gap-2 mb-2">
+          <input
+            type="number"
+            min="1"
+            max="12"
+            placeholder="HH"
+            value={reminderHour}
+            onChange={(e) => setReminderHour(e.target.value)}
+            className="w-1/3 px-3 py-2 rounded-xl border"
+          />
+          <input
+            type="number"
+            min="0"
+            max="59"
+            placeholder="MM"
+            value={reminderMinute}
+            onChange={(e) => setReminderMinute(e.target.value)}
+            className="w-1/3 px-3 py-2 rounded-xl border"
+          />
+          <select
+            value={reminderPeriod}
+            onChange={(e) => setReminderPeriod(e.target.value)}
+            className="w-1/3 px-3 py-2 rounded-xl border"
+          >
+            <option value="AM">AM</option>
+            <option value="PM">PM</option>
+          </select>
+        </div>
+
+        {/* Day selector */}
         <div className="flex gap-2 mb-2">
           {["Today", "Tomorrow"].map(d => (
             <button
@@ -239,11 +299,8 @@ export default function App() {
             <span>{completedCount}/{totalCount} completed</span>
             <span>{progress}%</span>
           </div>
-          <div className="h-3 bg-gray-300 rounded-full overflow-hidden">
-            <div
-              className={`${progressColor} h-full`}
-              style={{ width: `${progress}%` }}
-            />
+          <div className="h-3 bg-gray-300 rounded-full">
+            <div className={`${progressColor} h-full`} style={{ width: `${progress}%` }} />
           </div>
         </div>
 
@@ -251,7 +308,7 @@ export default function App() {
           onClick={addTask}
           className="w-full bg-blue-400 hover:bg-blue-600 text-white py-2 rounded-xl mb-3"
         >
-          Add
+          Add Task
         </button>
 
         {/* Filters */}
@@ -260,7 +317,7 @@ export default function App() {
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`px-3 py-1 rounded-full text-sm ${
+              className={`px-3 py-1 rounded-full ${
                 filter === f ? "bg-black text-white" : "bg-gray-300"
               }`}
             >
@@ -269,18 +326,16 @@ export default function App() {
           ))}
         </div>
 
-        {/* Today */}
         {visibleToday.length > 0 && (
           <>
-            <h2 className="font-bold mb-1"> Today</h2>
+            <h2 className="font-bold mb-1">Today</h2>
             <ul className="space-y-2 mb-3">{renderTasks(visibleToday)}</ul>
           </>
         )}
 
-        {/* Tomorrow */}
         {visibleTomorrow.length > 0 && (
           <>
-            <h2 className="font-bold mb-1"> Tomorrow</h2>
+            <h2 className="font-bold mb-1">Tomorrow</h2>
             <ul className="space-y-2">{renderTasks(visibleTomorrow)}</ul>
           </>
         )}
